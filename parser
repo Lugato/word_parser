@@ -1,0 +1,78 @@
+from bs4 import BeautifulSoup
+import pandas as pd
+import numpy as np
+
+# Load the HTML content from a file
+with open('path_to_your_file.html', 'r', encoding='utf-8') as file:
+    html_content = file.read()
+
+# Parse the HTML content
+soup = BeautifulSoup(html_content, 'html.parser')
+
+def parse_table(table):
+    n_rows = len(table.find_all('tr'))
+    n_cols = max([len(row.find_all(['td', 'th'])) for row in table.find_all('tr')])
+    data = np.zeros((n_rows, n_cols), dtype=object)
+    
+    for i, row in enumerate(table.find_all('tr')):
+        cols = row.find_all(['td', 'th'])
+        col_index = 0
+        for col in cols:
+            while data[i, col_index] != 0:
+                col_index += 1
+            
+            rowspan = int(col.get('rowspan', 1))
+            colspan = int(col.get('colspan', 1))
+            
+            for r in range(rowspan):
+                for c in range(colspan):
+                    data[i + r, col_index + c] = col
+            
+            col_index += colspan
+    
+    df = pd.DataFrame(data)
+    return df
+
+def extract_cell_content(cell):
+    content = []
+    for element in cell.descendants:
+        if element.name == 'br':
+            content.append('\n')
+        elif element.name in ['b', 'strong']:
+            content.append(f'<b>{element.text}</b>')
+        elif element.name in ['i', 'em']:
+            content.append(f'<i>{element.text}</i>')
+        elif element.name == 'a':
+            content.append(f'<a href="{element.get("href")}">{element.text}</a>')
+        elif element.name == 'sup':
+            content.append(f'<sup>{element.text}</sup>')
+        elif isinstance(element, str):
+            content.append(element)
+    return ''.join(content)
+
+def get_table_headers(soup):
+    headers = []
+    tables = soup.find_all('table')
+    for table in tables:
+        prev = table.find_previous_sibling()
+        while prev and prev.name != 'p':
+            prev = prev.find_previous_sibling()
+        if prev and prev.name == 'p':
+            headers.append(prev.get_text())
+        else:
+            headers.append(None)
+    return headers
+
+# Parse tables and extract headers
+tables = soup.find_all('table')
+parsed_tables = [parse_table(table) for table in tables]
+table_headers = get_table_headers(soup)
+
+# Print table content along with headers
+for header, table in zip(table_headers, parsed_tables):
+    print(f"Header: {header}")
+    for row in table.itertuples(index=False):
+        for cell in row:
+            if cell != 0:
+                cell_content = extract_cell_content(cell)
+                print(cell_content)
